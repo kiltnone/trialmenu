@@ -108,19 +108,19 @@
 
         /* Classes for applying animations */
         .page-animate-out-left {
-            animation: pageFlipOutLeft 0.5s forwards; /* Increased duration for smoother flip */
+            animation: pageFlipOutLeft 0.6s forwards; /* Increased duration for smoother flip */
         }
 
         .page-animate-in-right {
-            animation: pageFlipInRight 0.5s forwards;
+            animation: pageFlipInRight 0.6s forwards;
         }
 
         .page-animate-out-right {
-            animation: pageFlipOutRight 0.5s forwards;
+            animation: pageFlipOutRight 0.6s forwards;
         }
 
         .page-animate-in-left {
-            animation: pageFlipInLeft 0.5s forwards;
+            animation: pageFlipInLeft 0.6s forwards;
         }
 
 
@@ -257,26 +257,46 @@
                 // Remove the "out" animation class
                 menuPage.classList.remove(animationOutClass);
 
-                // Update the image source to the new page
-                menuPage.src = menuImages[currentPageIndex];
-                pageIndicator.textContent = `${currentPageIndex + 1} / ${menuImages.length}`;
+                // --- Start of new logic for image preloading ---
+                // Hide the current image briefly
+                menuPage.style.visibility = 'hidden';
 
-                // Apply the "in" animation to the new page
-                menuPage.classList.add(animationInClass);
+                const newImage = new Image();
+                newImage.src = menuImages[currentPageIndex];
 
-                // Listen for the end of the "in" animation
-                menuPage.addEventListener('animationend', function inHandler() {
-                    menuPage.removeEventListener('animationend', inHandler);
-                    menuPage.classList.remove(animationInClass);
-                    isAnimating = false; // Animation finished, allow new animations
-                });
+                newImage.onload = () => {
+                    // Once the new image is loaded, update the source and then animate it in
+                    menuPage.src = newImage.src;
+                    menuPage.style.visibility = 'visible'; // Make it visible again
 
-                // Disable/enable buttons at start/end of menu
-                prevBtn.disabled = currentPageIndex === 0;
-                nextBtn.disabled = currentPageIndex === menuImages.length - 1;
-                prevBtn.style.opacity = prevBtn.disabled ? '0.0' : '0.5'; /* Changed opacity to 0.5 for disabled buttons */
-                nextBtn.style.opacity = nextBtn.disabled ? '0.0' : '0.5'; /* Changed opacity to 0.5 for disabled buttons */
+                    pageIndicator.textContent = `${currentPageIndex + 1} / ${menuImages.length}`;
 
+                    // Apply the "in" animation to the new page
+                    menuPage.classList.add(animationInClass);
+
+                    // Listen for the end of the "in" animation
+                    menuPage.addEventListener('animationend', function inHandler() {
+                        menuPage.removeEventListener('animationend', inHandler);
+                        menuPage.classList.remove(animationInClass);
+                        isAnimating = false; // Animation finished, allow new animations
+                    });
+
+                    // Disable/enable buttons at start/end of menu
+                    prevBtn.disabled = currentPageIndex === 0;
+                    nextBtn.disabled = currentPageIndex === menuImages.length - 1;
+                    prevBtn.style.opacity = prevBtn.disabled ? '0.0' : '0.5';
+                    nextBtn.style.opacity = nextBtn.disabled ? '0.0' : '0.5';
+                };
+
+                newImage.onerror = () => {
+                    // Handle image loading error (e.g., show a broken image icon or log to console)
+                    console.error("Failed to load image: ", newImage.src);
+                    menuPage.style.visibility = 'visible'; // Ensure it's visible even on error
+                    menuPage.classList.remove(animationOutClass); // Clean up
+                    isAnimating = false; // Release animation lock
+                };
+
+                // --- End of new logic for image preloading ---
             }, { once: true }); // Ensure the event listener is removed after first use
         }
 
