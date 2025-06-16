@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Restaurant Menu</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom CSS for page-turn animation and responsiveness */
+        html, body {
+            height: 100%; /* Ensure html and body take full height */
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Hide scrollbars if content overflows during transitions */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #000000; /* Light gray background */
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* Center content horizontally */
+            justify-content: center; /* Center content vertically */
+            -webkit-tap-highlight-color: transparent; /* Remove tap highlight on mobile */
+        }
+
+        .menu-container {
+            position: relative;
+            width: 95%; /* Responsive width */
+            max-width: 500px; /* Max width for larger screens */
+            height: auto; /* Height will be determined by image aspect ratio */
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+            border-radius: 1rem; /* Rounded corners */
+            overflow: hidden; /* Hide overflow during transitions */
+            background-color: #000000;
+            /* flex-grow: 1; - Removed as we want to center content without taking full height */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            /* margin: auto; - Removed, handled by body flex centering */
+            padding: 1rem; /* Padding inside the container */
+            perspective: 1000px; /* Crucial for 3D transforms */
+        }
+
+        .menu-page {
+            width: 100%;
+            height: auto;
+            display: block; /* Remove extra space below image */
+            border-radius: 0.75rem; /* Slightly smaller rounded corners for the image */
+            object-fit: contain; /* Ensure image fits without cropping */
+            /* Transitions and transforms will be applied via animation classes */
+        }
+
+        /* Keyframes for page turn animations */
+        /* Turning to next page (swipe left) */
+        @keyframes pageFlipOutLeft {
+            0% {
+                opacity: 1;
+                transform: perspective(1000px) rotateY(0deg);
+                transform-origin: right center;
+            }
+            100% {
+                opacity: 0;
+                transform: perspective(1000px) rotateY(-180deg); /* Flips over to the left */
+                transform-origin: right center;
+            }
+        }
+
+        @keyframes pageFlipInRight {
+            0% {
+                opacity: 0;
+                transform: perspective(1000px) rotateY(180deg); /* Starts flipped from right */
+                transform-origin: left center;
+            }
+            100% {
+                opacity: 1;
+                transform: perspective(1000px) rotateY(0deg);
+                transform-origin: left center;
+            }
+        }
+
+        /* Turning to previous page (swipe right) */
+        @keyframes pageFlipOutRight {
+            0% {
+                opacity: 1;
+                transform: perspective(1000px) rotateY(0deg);
+                transform-origin: left center;
+            }
+            100% {
+                opacity: 0;
+                transform: perspective(1000px) rotateY(180deg); /* Flips over to the right */
+                transform-origin: left center;
+            }
+        }
+
+        @keyframes pageFlipInLeft {
+            0% {
+                opacity: 0;
+                transform: perspective(1000px) rotateY(-180deg); /* Starts flipped from left */
+                transform-origin: right center;
+            }
+            100% {
+                opacity: 1;
+                transform: perspective(1000px) rotateY(0deg);
+                transform-origin: right center;
+            }
+        }
+
+        /* Classes for applying animations */
+        .page-animate-out-left {
+            animation: pageFlipOutLeft 0.5s forwards; /* Increased duration for smoother flip */
+        }
+
+        .page-animate-in-right {
+            animation: pageFlipInRight 0.5s forwards;
+        }
+
+        .page-animate-out-right {
+            animation: pageFlipOutRight 0.5s forwards;
+        }
+
+        .page-animate-in-left {
+            animation: pageFlipInLeft 0.5s forwards;
+        }
+
+
+        .navigation-button {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background-color: rgba(0, 0, 0, 0.4);
+            color: white;
+            border: none;
+            padding: 0.75rem 1rem;
+            font-size: 1.5rem;
+            cursor: pointer;
+            border-radius: 9999px; /* Fully rounded */
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s ease;
+            user-select: none; /* Prevent text selection */
+            -webkit-user-select: none; /* For Safari */
+            -moz-user-select: none; /* For Firefox */
+            -ms-user-select: none; /* For IE/Edge */
+        }
+
+        .navigation-button:hover {
+            background-color: rgba(0, 0, 0, 0.6);
+        }
+
+        .prev-button {
+            left: 0.5rem;
+        }
+
+        .next-button {
+            right: 0.5rem;
+        }
+
+        .page-indicator {
+            position: absolute;
+            bottom: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            z-index: 10;
+        }
+
+        /* Responsive adjustments */
+        @media (min-width: 640px) {
+            .menu-container {
+                padding: 1.5rem;
+            }
+            .navigation-button {
+                padding: 1rem 1.25rem;
+                font-size: 2rem;
+            }
+            .prev-button {
+                left: 1.5rem;
+            }
+            .next-button {
+                right: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Menu Container -->
+    <div class="menu-container">
+        <!-- Main Menu Image -->
+        <img id="menuPage" src="menu2/1.png" alt="Menu Page" class="menu-page">
+
+        <!-- Previous Button -->
+        <button id="prevBtn" class="navigation-button prev-button focus:outline-none">
+            &#8249; <!-- Left arrow HTML entity -->
+        </button>
+
+        <!-- Next Button -->
+        <button id="nextBtn" class="navigation-button next-button focus:outline-none">
+            &#8250; <!-- Right arrow HTML entity -->
+        </button>
+
+        <!-- Page Indicator -->
+        <div id="pageIndicator" class="page-indicator">1 / 1</div>
+    </div>
+
+    <script>
+        // Get DOM elements
+        const menuPage = document.getElementById('menuPage');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const pageIndicator = document.getElementById('pageIndicator');
+        const menuContainer = document.querySelector('.menu-container');
+
+        // Array of menu image URLs
+        // IMPORTANT: Replace these placeholder URLs with your actual menu image URLs!
+        const menuImages = [
+            "menu2/1.png",
+            "menu2/2.png",
+            "menu2/3.png",
+            "menu2/4.png",
+            "menu2/5.png",
+            "menu2/6.png",
+            "menu2/7.png"
+        ];
+
+        let currentPageIndex = 0;
+        let startX = 0;
+        let isSwiping = false;
+        let isAnimating = false; // Flag to prevent multiple animations at once
+
+        /**
+         * Updates the displayed menu page and page indicator with animation.
+         * @param {string} direction 'next' or 'prev' for animation direction.
+         */
+        function updatePage(direction) {
+            if (isAnimating) return; // Prevent new animations if one is already playing
+            isAnimating = true;
+
+            // Reversed logic for animation classes
+            const animationOutClass = direction === 'next' ? 'page-animate-out-right' : 'page-animate-out-left';
+            const animationInClass = direction === 'next' ? 'page-animate-in-left' : 'page-animate-in-right';
+
+            // Apply the "out" animation to the current page
+            menuPage.classList.add(animationOutClass);
+
+            // Listen for the end of the "out" animation
+            menuPage.addEventListener('animationend', function handler() {
+                menuPage.removeEventListener('animationend', handler);
+
+                // Remove the "out" animation class
+                menuPage.classList.remove(animationOutClass);
+
+                // Update the image source to the new page
+                menuPage.src = menuImages[currentPageIndex];
+                pageIndicator.textContent = `${currentPageIndex + 1} / ${menuImages.length}`;
+
+                // Apply the "in" animation to the new page
+                menuPage.classList.add(animationInClass);
+
+                // Listen for the end of the "in" animation
+                menuPage.addEventListener('animationend', function inHandler() {
+                    menuPage.removeEventListener('animationend', inHandler);
+                    menuPage.classList.remove(animationInClass);
+                    isAnimating = false; // Animation finished, allow new animations
+                });
+
+                // Disable/enable buttons at start/end of menu
+                prevBtn.disabled = currentPageIndex === 0;
+                nextBtn.disabled = currentPageIndex === menuImages.length - 1;
+                prevBtn.style.opacity = prevBtn.disabled ? '0.0' : '0.5'; /* Changed opacity to 0.5 for disabled buttons */
+                nextBtn.style.opacity = nextBtn.disabled ? '0.0' : '0.5'; /* Changed opacity to 0.5 for disabled buttons */
+
+            }, { once: true }); // Ensure the event listener is removed after first use
+        }
+
+        /**
+         * Navigates to the next menu page.
+         */
+        function nextPage() {
+            if (currentPageIndex < menuImages.length - 1 && !isAnimating) {
+                currentPageIndex++;
+                updatePage('next');
+            }
+        }
+
+        /**
+         * Navigates to the previous menu page.
+         */
+        function prevPage() {
+            if (currentPageIndex > 0 && !isAnimating) {
+                currentPageIndex--;
+                updatePage('prev');
+            }
+        }
+
+        // Event Listeners for Navigation Buttons
+        prevBtn.addEventListener('click', prevPage);
+        nextBtn.addEventListener('click', nextPage);
+
+        // Touch Event Listeners for Swiping
+        menuContainer.addEventListener('touchstart', (e) => {
+            if (isAnimating) return; // Do not allow swipe if animation is in progress
+            isSwiping = true;
+            startX = e.touches[0].clientX; // Get starting X coordinate of the touch
+            // No direct transform on touchmove with animation, let animation handle it
+        });
+
+        menuContainer.addEventListener('touchmove', (e) => {
+            // Preventing default on touchmove for a significant horizontal swipe
+            // helps prevent unintended vertical scrolling on mobile.
+            if (!isSwiping || isAnimating) return;
+
+            const currentX = e.touches[0].clientX;
+            const deltaX = currentX - startX;
+            if (Math.abs(deltaX) > 10) { // If horizontal movement is significant
+                e.preventDefault();
+            }
+        }, { passive: false }); // `passive: false` is needed for `preventDefault()` to work
+
+        menuContainer.addEventListener('touchend', (e) => {
+            if (!isSwiping || isAnimating) {
+                isSwiping = false; // Reset swipe flag
+                return;
+            }
+            isSwiping = false;
+
+            const endX = e.changedTouches[0].clientX;
+            const deltaX = endX - startX;
+            const swipeThreshold = menuContainer.offsetWidth / 5; // Swipe threshold (e.g., 20% of container width)
+
+            if (deltaX > swipeThreshold && currentPageIndex > 0) {
+                // Swiped right enough to go to previous page
+                prevPage();
+            } else if (deltaX < -swipeThreshold && currentPageIndex < menuImages.length - 1) {
+                // Swiped left enough to go to next page
+                nextPage();
+            }
+            // If not a significant swipe, no action is needed, as there's no direct drag transform to reset
+        });
+
+        // Initialize the first page without animation on load
+        function initializePage() {
+            menuPage.src = menuImages[currentPageIndex];
+            pageIndicator.textContent = `${currentPageIndex + 1} / ${menuImages.length}`;
+            prevBtn.disabled = currentPageIndex === 0;
+            nextBtn.disabled = currentPageIndex === menuImages.length - 1;
+            prevBtn.style.opacity = prevBtn.disabled ? '0.0' : '0.5';
+            nextBtn.style.opacity = nextBtn.disabled ? '0.0' : '0.5';
+        }
+
+        // Call initializePage on load
+        window.addEventListener('load', initializePage);
+    </script>
+</body>
+</html>
