@@ -33,11 +33,9 @@
             border-radius: 1rem; /* Rounded corners */
             overflow: hidden; /* Hide overflow during transitions */
             background-color: #000000;
-            /* flex-grow: 1; - Removed as we want to center content without taking full height */
             display: flex;
             align-items: center;
             justify-content: center;
-            /* margin: auto; - Removed, handled by body flex centering */
             padding: 1rem; /* Padding inside the container */
             perspective: 1000px; /* Crucial for 3D transforms */
         }
@@ -48,7 +46,6 @@
             display: block; /* Remove extra space below image */
             border-radius: 0.75rem; /* Slightly smaller rounded corners for the image */
             object-fit: contain; /* Ensure image fits without cropping */
-            /* Transitions and transforms will be applied via animation classes */
         }
 
         /* Keyframes for page turn animations */
@@ -187,6 +184,14 @@
                 right: 1.5rem;
             }
         }
+
+        /* New: Disable navigation buttons on mobile while keeping them visible */
+        @media (max-width: 639px) {
+            .navigation-button {
+                pointer-events: none; /* Disables click/touch events */
+                opacity: 0.5 !important; /* Makes them visible but disabled-looking */
+            }
+        }
     </style>
 </head>
 <body>
@@ -282,10 +287,19 @@
                     });
 
                     // Disable/enable buttons at start/end of menu
-                    prevBtn.disabled = currentPageIndex === 0;
-                    nextBtn.disabled = currentPageIndex === menuImages.length - 1;
-                    prevBtn.style.opacity = prevBtn.disabled ? '0.0' : '0.5';
-                    nextBtn.style.opacity = nextBtn.disabled ? '0.0' : '0.5';
+                    // Only apply opacity changes if not on mobile, as CSS handles mobile opacity.
+                    if (window.innerWidth >= 640) {
+                        prevBtn.disabled = currentPageIndex === 0;
+                        nextBtn.disabled = currentPageIndex === menuImages.length - 1;
+                        prevBtn.style.opacity = prevBtn.disabled ? '0.0' : '0.5';
+                        nextBtn.style.opacity = nextBtn.disabled ? '0.0' : '0.5';
+                    } else {
+                        // On mobile, ensure they are always opaque as per CSS rules
+                        prevBtn.disabled = false; // Visually active, but non-functional by CSS pointer-events
+                        nextBtn.disabled = false;
+                        prevBtn.style.opacity = '1.0';
+                        nextBtn.style.opacity = '1.0';
+                    }
                 };
 
                 newImage.onerror = () => {
@@ -321,6 +335,7 @@
         }
 
         // Event Listeners for Navigation Buttons
+        // These listeners will still fire on mobile, but pointer-events: none; prevents the click.
         prevBtn.addEventListener('click', prevPage);
         nextBtn.addEventListener('click', nextPage);
 
@@ -329,7 +344,6 @@
             if (isAnimating) return; // Do not allow swipe if animation is in progress
             isSwiping = true;
             startX = e.touches[0].clientX; // Get starting X coordinate of the touch
-            // No direct transform on touchmove with animation, let animation handle it
         });
 
         menuContainer.addEventListener('touchmove', (e) => {
@@ -369,14 +383,29 @@
         function initializePage() {
             menuPage.src = menuImages[currentPageIndex];
             pageIndicator.textContent = `${currentPageIndex + 1} / ${menuImages.length}`;
-            prevBtn.disabled = currentPageIndex === 0;
-            nextBtn.disabled = currentPageIndex === menuImages.length - 1;
-            prevBtn.style.opacity = prevBtn.disabled ? '0.0' : '0.5';
-            nextBtn.style.opacity = nextBtn.disabled ? '0.0' : '0.5';
+
+            // Set initial state for buttons based on screen size
+            if (window.innerWidth >= 640) {
+                prevBtn.disabled = currentPageIndex === 0;
+                nextBtn.disabled = currentPageIndex === menuImages.length - 1;
+                prevBtn.style.opacity = prevBtn.disabled ? '0.0' : '0.5';
+                nextBtn.style.opacity = nextBtn.disabled ? '0.0' : '0.5';
+            } else {
+                // On mobile, they are always visible but non-functional via CSS
+                prevBtn.disabled = false;
+                nextBtn.disabled = false;
+                prevBtn.style.opacity = '1.0';
+                nextBtn.style.opacity = '1.0';
+            }
         }
 
         // Call initializePage on load
         window.addEventListener('load', initializePage);
+
+        // Handle resize events to adjust button state based on screen size
+        window.addEventListener('resize', () => {
+            initializePage(); // Re-evaluate button state on resize
+        });
     </script>
 </body>
 </html>
