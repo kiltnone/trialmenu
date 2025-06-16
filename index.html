@@ -136,7 +136,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: background-color 0.2s ease;
+            transition: background-color 0.2s ease, opacity 0.3s ease; /* Added opacity transition */
             user-select: none; /* Prevent text selection */
             -webkit-user-select: none; /* For Safari */
             -moz-user-select: none; /* For Firefox */
@@ -185,11 +185,11 @@
             }
         }
 
-        /* New: Disable navigation buttons on mobile while keeping them visible */
+        /* New: Disable navigation buttons on mobile while keeping them visible with dynamic opacity */
         @media (max-width: 639px) {
             .navigation-button {
                 pointer-events: none; /* Disables click/touch events */
-                opacity: 0.5 !important; /* Makes them visible but disabled-looking */
+                /* Removed opacity: 0.5 !important; to let JS control opacity based on disabled state */
             }
         }
     </style>
@@ -286,20 +286,13 @@
                         isAnimating = false; // Animation finished, allow new animations
                     });
 
-                    // Disable/enable buttons at start/end of menu
-                    // Only apply opacity changes if not on mobile, as CSS handles mobile opacity.
-                    if (window.innerWidth >= 640) {
-                        prevBtn.disabled = currentPageIndex === 0;
-                        nextBtn.disabled = currentPageIndex === menuImages.length - 1;
-                        prevBtn.style.opacity = prevBtn.disabled ? '0.0' : '0.5';
-                        nextBtn.style.opacity = nextBtn.disabled ? '0.0' : '0.5';
-                    } else {
-                        // On mobile, ensure they are always opaque as per CSS rules
-                        prevBtn.disabled = false; // Visually active, but non-functional by CSS pointer-events
-                        nextBtn.disabled = false;
-                        prevBtn.style.opacity = '1.0';
-                        nextBtn.style.opacity = '1.0';
-                    }
+                    // Disable/enable buttons at start/end of menu based on current page
+                    prevBtn.disabled = currentPageIndex === 0;
+                    nextBtn.disabled = currentPageIndex === menuImages.length - 1;
+
+                    // Set opacity based on disabled state
+                    prevBtn.style.opacity = prevBtn.disabled ? '0.0' : '0.5';
+                    nextBtn.style.opacity = nextBtn.disabled ? '0.0' : '0.5';
                 };
 
                 newImage.onerror = () => {
@@ -384,25 +377,20 @@
             menuPage.src = menuImages[currentPageIndex];
             pageIndicator.textContent = `${currentPageIndex + 1} / ${menuImages.length}`;
 
-            // Set initial state for buttons based on screen size
-            if (window.innerWidth >= 640) {
-                prevBtn.disabled = currentPageIndex === 0;
-                nextBtn.disabled = currentPageIndex === menuImages.length - 1;
-                prevBtn.style.opacity = prevBtn.disabled ? '0.0' : '0.5';
-                nextBtn.style.opacity = nextBtn.disabled ? '0.0' : '0.5';
-            } else {
-                // On mobile, they are always visible but non-functional via CSS
-                prevBtn.disabled = false;
-                nextBtn.disabled = false;
-                prevBtn.style.opacity = '1.0';
-                nextBtn.style.opacity = '1.0';
-            }
+            // Set initial state for buttons based on current page
+            prevBtn.disabled = currentPageIndex === 0;
+            nextBtn.disabled = currentPageIndex === menuImages.length - 1;
+
+            // Set opacity based on disabled state
+            prevBtn.style.opacity = prevBtn.disabled ? '0.0' : '0.5';
+            nextBtn.style.opacity = nextBtn.disabled ? '0.0' : '0.5';
         }
 
         // Call initializePage on load
         window.addEventListener('load', initializePage);
 
         // Handle resize events to adjust button state based on screen size
+        // (Though with pointer-events:none on mobile, opacity logic remains consistent)
         window.addEventListener('resize', () => {
             initializePage(); // Re-evaluate button state on resize
         });
