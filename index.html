@@ -246,10 +246,10 @@
 
         // --- Zoom and Pan State Variables ---
         let currentScale = 1.0;
-        let offsetX = 0; // Current X translation (pixels)
-        let offsetY = 0; // Current Y translation (pixels)
-        let lastTouchX = 0; // Last recorded X position of single touch or pinch midpoint
-        let lastTouchY = 0; // Last recorded Y position of single touch or pinch midpoint
+        let offsetX = 0; // Current X translation (pixels) relative to center of menuPage's unscaled position
+        let offsetY = 0; // Current Y translation (pixels) relative to center of menuPage's unscaled position
+        let lastTouchX = 0; // Last recorded X position of a single touch or pinch midpoint
+        let lastTouchY = 0; // Last recorded Y position of a single touch or pinch midpoint
         let initialPinchDistance = 0; // Distance between two fingers at touchstart
         let isPinching = false; // True if a two-finger pinch is active
         let isDragging = false; // True if a single-finger pan (when zoomed) is active
@@ -258,6 +258,7 @@
         const DOUBLE_TAP_THRESHOLD_MS = 300;
         const MAX_ZOOM = 3.0; // Max zoom level
         const MIN_ZOOM = 1.0; // Min zoom level
+        const SWIPE_THRESHOLD = 50; // Pixels required for a swipe to register
 
         /**
          * Applies the current scale, offset X, and offset Y to the menu page.
@@ -290,21 +291,21 @@
             const viewportWidth = menuContainer.offsetWidth;
             const viewportHeight = menuContainer.offsetHeight;
 
-            // Maximum displacement from the center of the viewport to the edge of the scaled image
-            // This defines the panning boundaries relative to the container's center
-            const maxDisplacementX = Math.max(0, (scaledWidth - viewportWidth) / 2);
-            const maxDisplacementY = Math.max(0, (scaledHeight - viewportHeight) / 2);
+            // Calculate the maximum allowed displacement from the center of the image
+            // to keep it within the container.
+            const maxTranslationX = Math.max(0, (scaledWidth - viewportWidth) / 2);
+            const maxTranslationY = Math.max(0, (scaledHeight - viewportHeight) / 2);
 
             let clampedX = newOffsetX;
             if (scaledWidth > viewportWidth) {
-                clampedX = Math.max(-maxDisplacementX, Math.min(maxDisplacementX, newOffsetX));
+                clampedX = Math.max(-maxTranslationX, Math.min(maxTranslationX, newOffsetX));
             } else {
                 clampedX = 0; // Center horizontally if image is smaller than viewport
             }
 
             let clampedY = newOffsetY;
             if (scaledHeight > viewportHeight) {
-                clampedY = Math.max(-maxDisplacementY, Math.min(maxDisplacementY, newOffsetY));
+                clampedY = Math.max(-maxTranslationY, Math.min(maxTranslationY, newOffsetY));
             } else {
                 clampedY = 0; // Center vertically if image is smaller than viewport
             }
@@ -412,7 +413,7 @@
 
             if (e.touches.length === 2) {
                 isPinching = true;
-                isDragging = false; // Reset dragging if starting a pinch
+                isDragging = false; // Ensure dragging is false when pinching starts
                 menuContainer.classList.add('grabbing');
                 const touch1 = e.touches[0];
                 const touch2 = e.touches[1];
@@ -433,7 +434,6 @@
                     menuContainer.classList.add('grabbing');
                 } else {
                     isDragging = false; // Not a pan drag
-                    isPinching = false; // Not a pinch
                 }
             }
         });
@@ -441,8 +441,11 @@
         menuContainer.addEventListener('touchmove', (e) => {
             if (isAnimating) return; // Ignore touch if page animation is ongoing
 
-            // Prevent default browser behaviors (e.g., scrolling, browser zoom)
-            e.preventDefault();
+            // Prevent default browser behaviors (e.g., scrolling, browser zoom) if we are handling a gesture
+            // This is crucial for smooth custom interactions.
+            if (isPinching || isDragging || (e.touches.length === 1 && currentScale === MIN_ZOOM && Math.abs(e.touches[0].clientX - swipeStartX) > 10)) {
+                 e.preventDefault();
+            }
 
             if (isPinching && e.touches.length === 2) {
                 const touch1 = e.touches[0];
@@ -453,36 +456,30 @@
                 let newScale = currentScale * scaleFactor;
                 newScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newScale));
 
-                // Calculate current midpoint of touches relative to the container's center
                 const containerRect = menuContainer.getBoundingClientRect();
                 const currentMidX = (touch1.clientX + touch2.clientX) / 2;
                 const currentMidY = (touch1.clientY + touch2.clientY) / 2;
 
-                // Calculate the point within the *current, scaled image's coordinate system* that is under the pinch center
-                // This formula is for transform-origin: center center
-                const pointXInImageCoords = (currentMidX - containerRect.left - offsetX);
-                const pointYInImageCoords = (currentMidY - containerRect.top - offsetY);
+                // Calculate pivot point (pinch center) relative to container's center
+                const px = currentMidX - (containerRect.left + containerRect.width / 2);
+                const py = currentMidY - (containerRect.top + containerRect.height / 2);
 
-                // Calculate new offsets to keep that point fixed relative to the screen after new scale
-                let newOffsetX = currentMidX - containerRect.left - (pointXInImageCoords / currentScale) * newScale;
-                let newOffsetY = currentMidY - containerRect.top - (pointYInImageCoords / currentScale) * newScale;
+                // Calculate new offsets to keep the `px, py` point fixed after scaling
+                let calculatedOffsetX = px - (px - offsetX) * (newScale / currentScale);
+                let calculatedOffsetY = py - (py - offsetY) * (newScale / currentScale);
 
-                // Adjust newOffsets relative to the container's center again (as our offsetX/Y are translations from center)
-                newOffsetX -= (menuContainer.offsetWidth / 2);
-                newOffsetY -= (menuContainer.offsetHeight / 2);
+                currentScale = newScale; // Update scale first
 
-
-                const clamped = clampOffsets(newOffsetX, newOffsetY, newScale);
+                // Clamp after calculating new offsets with the new scale
+                const clamped = clampOffsets(calculatedOffsetX, calculatedOffsetY, currentScale);
                 offsetX = clamped.x;
                 offsetY = clamped.y;
-                currentScale = newScale;
-
                 applyTransform();
 
                 // Update initial pinch distance for next move
                 initialPinchDistance = newPinchDistance;
-                lastTouchX = currentMidX; // Update lastTouch for consistency
-                lastTouchY = currentMidY; // Update lastTouch for consistency
+                // lastTouchX/Y are not needed for subsequent pinch calculations with this formula
+                // but good to keep if gesture switches to drag (though that shouldn't happen mid-pinch)
 
             } else if (isDragging && e.touches.length === 1) {
                 const touch = e.touches[0];
@@ -500,16 +497,8 @@
 
                 lastTouchX = touch.clientX;
                 lastTouchY = touch.clientY;
-            } else if (e.touches.length === 1 && currentScale === MIN_ZOOM) {
-                // If not pinching and not dragging, and not zoomed, this is a potential page swipe
-                // No transform applied here, just let the browser handle potential scrolling for now if deltaX is small,
-                // or prevent default if it's a strong horizontal swipe.
-                const currentX = e.touches[0].clientX;
-                const swipeDeltaX = currentX - swipeStartX; // Use swipeStartX for initial direction
-                if (Math.abs(swipeDeltaX) > 10) { // If horizontal movement is significant
-                    e.preventDefault(); // Prevent default if it's a definite horizontal swipe
-                }
             }
+            // Swipe logic is handled in touchend after determining no zoom/pan happened
         }, { passive: false }); // `passive: false` is needed for `preventDefault()` to work
 
         menuContainer.addEventListener('touchend', (e) => {
@@ -520,11 +509,11 @@
                 return; // Ignore touchend if page animation is ongoing
             }
 
-            // If a pinch or drag was active, end it
+            // If a pinch or drag was active, finalize it and prevent other gestures
             if (isPinching || isDragging) {
                 isPinching = false;
                 isDragging = false;
-                // After pinch/drag, re-clamp offsets in case scale changed and went out of bounds
+                // After pinch/drag, re-clamp offsets in case current position is out of bounds
                 const clamped = clampOffsets(offsetX, offsetY, currentScale);
                 offsetX = clamped.x;
                 offsetY = clamped.y;
@@ -533,57 +522,58 @@
             }
 
             // --- Double Tap Logic ---
-            // Only consider double tap if it's the last finger lifted (e.touches.length === 0 after some time)
-            if (e.touches.length === 0) {
+            // Check for double tap only if no active multi-touch gestures and only one finger lifted
+            if (e.touches.length === 0) { // All fingers lifted
                 const currentTime = Date.now();
-                if (currentTime - lastTapTime < DOUBLE_TAP_THRESHOLD_MS) {
-                    // Double tap detected
+                const tapDuration = currentTime - lastTapTime;
+
+                // If it's a double tap
+                if (lastTapTime > 0 && tapDuration < DOUBLE_TAP_THRESHOLD_MS) {
                     const tapClientX = e.changedTouches[0].clientX;
                     const tapClientY = e.changedTouches[0].clientY;
                     const containerRect = menuContainer.getBoundingClientRect();
 
-                    // Tap point relative to container's content area (adjust for padding)
-                    const tapXRelativeContainer = tapClientX - containerRect.left - parseFloat(getComputedStyle(menuContainer).paddingLeft);
-                    const tapYRelativeContainer = tapClientY - containerRect.top - parseFloat(getComputedStyle(menuContainer).paddingTop);
+                    // Calculate tap point relative to container's center
+                    const px = tapClientX - (containerRect.left + containerRect.width / 2);
+                    const py = tapClientY - (containerRect.top + containerRect.height / 2);
 
                     if (currentScale > MIN_ZOOM) {
                         resetZoom(); // Zoom out if already zoomed
                     } else {
                         // Zoom in to 2x, centered on tap point
-                        currentScale = 2.0;
+                        const targetScale = 2.0;
 
-                        // Calculate new offsets to center the tap point
-                        // Point in image's current scaled coordinate system relative to center:
-                        const pointXInImageCoords = tapXRelativeContainer - (containerRect.width / 2);
-                        const pointYInImageCoords = tapYRelativeContainer - (containerRect.height / 2);
+                        // Calculate new translations to center around tap point using the formula
+                        // new_tx = px - (px - current_tx) * (new_scale / current_scale)
+                        // Here, current_tx, current_ty are 0 before zooming in.
+                        let newOffsetX = px - (px - 0) * (targetScale / MIN_ZOOM);
+                        let newOffsetY = py - (py - 0) * (targetScale / MIN_ZOOM);
 
-                        // New offsets to move the content so that the tapped point appears under the original tap point
-                        let newOffsetX = pointXInImageCoords * (1 - currentScale) + offsetX;
-                        let newOffsetY = pointYInImageCoords * (1 - currentScale) + offsetY;
+                        currentScale = targetScale; // Set the new scale
 
                         const clamped = clampOffsets(newOffsetX, newOffsetY, currentScale);
                         offsetX = clamped.x;
                         offsetY = clamped.y;
                         applyTransform();
                     }
-                    lastTapTime = 0; // Reset last tap time to prevent triple taps etc.
+                    lastTapTime = 0; // Reset last tap time to prevent accidental triple taps
+                    return; // Double tap handled, prevent page swipe
                 } else {
-                    lastTapTime = currentTime;
+                    lastTapTime = currentTime; // Record first tap time
                 }
             }
 
-            // --- Page Swipe Logic (if not zooming/panning and not double-tapping) ---
-            const endX = e.changedTouches[0].clientX;
-            const deltaX = endX - swipeStartX; // Use swipeStartX
+            // --- Page Swipe Logic (only if not zoomed and no double tap occurred) ---
+            if (currentScale === MIN_ZOOM) {
+                const endX = e.changedTouches[0].clientX;
+                const deltaX = endX - swipeStartX;
 
-            const swipeThreshold = menuContainer.offsetWidth / 5; // Swipe threshold (e.g., 20% of container width)
-
-            // Only trigger page swipe if not currently zoomed and not part of a double tap.
-            if (currentScale === MIN_ZOOM && (Date.now() - lastTapTime > DOUBLE_TAP_THRESHOLD_MS || lastTapTime === 0)) {
-                if (deltaX > swipeThreshold && currentPageIndex > 0) {
-                    prevPage();
-                } else if (deltaX < -swipeThreshold && currentPageIndex < menuImages.length - 1) {
-                    nextPage();
+                if (Math.abs(deltaX) > SWIPE_THRESHOLD) { // Only consider swipe if movement is significant
+                    if (deltaX > 0 && currentPageIndex > 0) { // Swiped right
+                        prevPage();
+                    } else if (deltaX < 0 && currentPageIndex < menuImages.length - 1) { // Swiped left
+                        nextPage();
+                    }
                 }
             }
         });
