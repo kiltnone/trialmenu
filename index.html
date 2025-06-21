@@ -13,11 +13,10 @@
             margin: 0;
             padding: 0;
             overflow: hidden; /* Hide scrollbars if content overflows during transitions */
-            touch-action: manipulation; /* Improves touch responsiveness, prevents default double-tap zoom */
         }
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #000000; /* Dark background */
+            background-color: #000000; /* Light gray background */
             display: flex;
             flex-direction: column;
             align-items: center; /* Center content horizontally */
@@ -39,11 +38,7 @@
             justify-content: center;
             padding: 1rem; /* Padding inside the container */
             perspective: 1000px; /* Crucial for 3D transforms */
-            cursor: grab; /* Indicate draggable */
-        }
-
-        .menu-container.grabbing {
-            cursor: grabbing;
+            transition: transform 0.3s ease-out; /* Smooth transition for zoom */
         }
 
         .menu-page {
@@ -52,9 +47,6 @@
             display: block; /* Remove extra space below image */
             border-radius: 0.75rem; /* Slightly smaller rounded corners for the image */
             object-fit: contain; /* Ensure image fits without cropping */
-            transform: scale(1) translateX(0) translateY(0); /* Initial transform */
-            transform-origin: center center; /* Important for simpler scaling origin */
-            transition: transform 0.1s ease-out; /* Smooth transition for pan/zoom */
         }
 
         /* Keyframes for page turn animations */
@@ -194,11 +186,24 @@
             }
         }
 
-        /* Disable navigation buttons on mobile while keeping them visible with dynamic opacity */
+        /* New: Disable navigation buttons on mobile while keeping them visible with dynamic opacity */
         @media (max-width: 639px) {
             .navigation-button {
                 pointer-events: none; /* Disables click/touch events */
+                /* Removed opacity: 0.5 !important; to let JS control opacity based on disabled state */
             }
+        }
+        /* Styles for zoomed state */
+        .zoomed {
+            transform: scale(3); /* Zoom in by 200% */
+            cursor: zoom-out; /* Indicate it's zoomed in */
+        }
+        .menu-container.zoomed .navigation-button {
+            opacity: 0 !important; /* Hide buttons when zoomed */
+            pointer-events: none;
+        }
+        .menu-container.zoomed .page-indicator {
+            opacity: 0 !important; /* Hide indicator when zoomed */
         }
     </style>
 </head>
@@ -207,7 +212,10 @@
     <!-- Menu Container -->
     <div class="menu-container">
         <!-- Main Menu Image -->
-        <img id="menuPage" src="menu2/1.png" alt="Menu Page" class="menu-page">
+         <div id="mediaContainer" class="w-full h-full flex items-center justify-center">
+            <img id="menuPage" src="menu2/0.jpg" alt="Menu Page" class="menu-page">
+         </div>
+        
 
         <!-- Previous Button -->
         <button id="prevBtn" class="navigation-button prev-button focus:outline-none">
@@ -225,169 +233,143 @@
 
     <script>
         // Get DOM elements
-        const menuPage = document.getElementById('menuPage');
+        const mediaContainer = document.getElementById('mediaContainer');
         const prevBtn = document.getElementById('prevBtn');
         const nextBtn = document.getElementById('nextBtn');
         const pageIndicator = document.getElementById('pageIndicator');
         const menuContainer = document.querySelector('.menu-container');
 
-        // Array of menu image URLs
-        // IMPORTANT: Replace these placeholder URLs with your actual menu image URLs!
-        const menuImages = [
-            "https://placehold.co/400x600/FF5733/FFFFFF?text=Welcome+Page",
-            "https://placehold.co/400x600/33FF57/FFFFFF?text=Appetizers",
-            "https://placehold.co/400x600/5733FF/FFFFFF?text=Main+Courses",
-            "https://placehold.co/400x600/FFBD33/FFFFFF?text=Desserts",
-            "https://placehold.co/400x600/33A3FF/FFFFFF?text=Drinks"
+        // Array of menu image/video URLs
+        // IMPORTANT: Replace these placeholder URLs with your actual menu image/video URLs!
+        const menuItems = [
+            "menu2/0.jpg",
+            "menu2/1.jpg",
+            "menu2/2.jpg",
+            "menu2/3.jpg",
+            "menu2/4.jpg",
+            "menu2/5.jpg",
+            "menu2/6.jpg",
+            "menu2/7.jpg",
+            "menu2/8.mp4", // This is where your video is
+            "menu2/9.jpg",
+            "menu2/10.jpg",
+            "menu2/11.jpg",
+            "menu2/12.jpg"
         ];
 
         let currentPageIndex = 0;
+        let startX = 0;
+        let isSwiping = false;
         let isAnimating = false; // Flag to prevent multiple animations at once
-
-        // --- Zoom and Pan State Variables ---
-        let currentScale = 1.0;
-        let offsetX = 0; // Current X translation (pixels) relative to center of menuPage's unscaled position
-        let offsetY = 0; // Current Y translation (pixels) relative to center of menuPage's unscaled position
-        let lastTouchX = 0; // Last recorded X position of a single touch or pinch midpoint
-        let lastTouchY = 0; // Last recorded Y position of a single touch or pinch midpoint
-        let initialPinchDistance = 0; // Distance between two fingers at touchstart
-        let isPinching = false; // True if a two-finger pinch is active
-        let isDragging = false; // True if a single-finger pan (when zoomed) is active
-        let lastTapTime = 0; // Timestamp of the last single tap
-        let swipeStartX = 0; // Starting X for page swipe detection
-        const DOUBLE_TAP_THRESHOLD_MS = 300;
-        const MAX_ZOOM = 3.0; // Max zoom level
-        const MIN_ZOOM = 1.0; // Min zoom level
-        const SWIPE_THRESHOLD = 50; // Pixels required for a swipe to register
+        let isZoomed = false; // Flag for zoom state
+        let lastTap = 0; // For double-tap detection
 
         /**
-         * Applies the current scale, offset X, and offset Y to the menu page.
-         */
-        function applyTransform() {
-            menuPage.style.transform = `scale(${currentScale}) translateX(${offsetX}px) translateY(${offsetY}px)`;
-        }
-
-        /**
-         * Resets zoom and pan to initial state (1x scale, centered).
-         */
-        function resetZoom() {
-            currentScale = 1.0;
-            offsetX = 0;
-            offsetY = 0;
-            applyTransform();
-        }
-
-        /**
-         * Clamps the offset values to prevent panning the image off-screen.
-         * @param {number} newOffsetX The proposed new X offset.
-         * @param {number} newOffsetY The proposed new Y offset.
-         * @param {number} scaleToUse The scale factor to use for clamping calculations.
-         * @returns {object} An object with clamped `x` and `y` offsets.
-         */
-        function clampOffsets(newOffsetX, newOffsetY, scaleToUse) {
-            const scaledWidth = menuPage.offsetWidth * scaleToUse;
-            const scaledHeight = menuPage.offsetHeight * scaleToUse;
-
-            const viewportWidth = menuContainer.offsetWidth;
-            const viewportHeight = menuContainer.offsetHeight;
-
-            // Calculate the maximum allowed displacement from the center of the image
-            // to keep it within the container.
-            const maxTranslationX = Math.max(0, (scaledWidth - viewportWidth) / 2);
-            const maxTranslationY = Math.max(0, (scaledHeight - viewportHeight) / 2);
-
-            let clampedX = newOffsetX;
-            if (scaledWidth > viewportWidth) {
-                clampedX = Math.max(-maxTranslationX, Math.min(maxTranslationX, newOffsetX));
-            } else {
-                clampedX = 0; // Center horizontally if image is smaller than viewport
-            }
-
-            let clampedY = newOffsetY;
-            if (scaledHeight > viewportHeight) {
-                clampedY = Math.max(-maxTranslationY, Math.min(maxTranslationY, newOffsetY));
-            } else {
-                clampedY = 0; // Center vertically if image is smaller than viewport
-            }
-
-            return { x: clampedX, y: clampedY };
-        }
-
-        /**
-         * Updates the displayed menu page and page indicator with animation.
+         * Updates the displayed menu page and page indicator with animation,
+         * handling both images and videos.
          * @param {string} direction 'next' or 'prev' for animation direction.
          */
         function updatePage(direction) {
-            if (isAnimating) return; // Prevent new animations if one is already playing
+            if (isAnimating || isZoomed) return; // Prevent new animations if one is already playing or zoomed
             isAnimating = true;
 
-            // Reset zoom state when changing pages
-            resetZoom();
+            // Clear existing media
+            while (mediaContainer.firstChild) {
+                mediaContainer.removeChild(mediaContainer.firstChild);
+            }
 
-            // Reversed logic for animation classes
             const animationOutClass = direction === 'next' ? 'page-animate-out-right' : 'page-animate-out-left';
             const animationInClass = direction === 'next' ? 'page-animate-in-left' : 'page-animate-in-right';
 
-            // Apply the "out" animation to the current page
-            menuPage.classList.add(animationOutClass);
+            // Create a temporary element to apply the "out" animation
+            const currentMediaElement = createMediaElement(menuItems[currentPageIndex], true); // true for current page's media
+            mediaContainer.appendChild(currentMediaElement);
+            currentMediaElement.classList.add(animationOutClass);
 
-            // Listen for the end of the "out" animation
-            menuPage.addEventListener('animationend', function handler() {
-                menuPage.removeEventListener('animationend', handler);
+            currentMediaElement.addEventListener('animationend', function handler() {
+                currentMediaElement.removeEventListener('animationend', handler);
+                currentMediaElement.classList.remove(animationOutClass);
 
-                // Remove the "out" animation class
-                menuPage.classList.remove(animationOutClass);
+                currentMediaElement.style.visibility = 'hidden';
 
-                // --- Start of new logic for image preloading ---
-                // Hide the current image briefly
-                menuPage.style.visibility = 'hidden';
+                // Determine the new media source
+                const newMediaSrc = menuItems[currentPageIndex];
+                const isVideo = newMediaSrc.endsWith('.mp4');
 
-                const newImage = new Image();
-                newImage.src = menuImages[currentPageIndex];
+                const newMediaElement = isVideo ? document.createElement('video') : document.createElement('img');
+                newMediaElement.src = newMediaSrc;
+                newMediaElement.classList.add('menu-page'); // Apply base styling
 
-                newImage.onload = () => {
-                    // Once the new image is loaded, update the source and then animate it in
-                    menuPage.src = newImage.src;
-                    menuPage.style.visibility = 'visible'; // Make it visible again
+                if (isVideo) {
+                    newMediaElement.setAttribute('controls', ''); // Add video controls
+                    newMediaElement.setAttribute('preload', 'auto'); // Preload video
+                    newMediaElement.setAttribute('playsinline', ''); // For iOS compatibility
+                }
 
-                    pageIndicator.textContent = `${currentPageIndex + 1} / ${menuImages.length}`;
-
-                    // Apply the "in" animation to the new page
-                    menuPage.classList.add(animationInClass);
-
-                    // Listen for the end of the "in" animation
-                    menuPage.addEventListener('animationend', function inHandler() {
-                        menuPage.removeEventListener('animationend', inHandler);
-                        menuPage.classList.remove(animationInClass);
-                        isAnimating = false; // Animation finished, allow new animations
-                    });
-
-                    // Disable/enable buttons at start/end of menu based on current page
-                    prevBtn.disabled = currentPageIndex === 0;
-                    nextBtn.disabled = currentPageIndex === menuImages.length - 1;
-
-                    // Set opacity based on disabled state
-                    prevBtn.style.opacity = prevBtn.disabled ? '0.0' : '0.5';
-                    nextBtn.style.opacity = nextBtn.disabled ? '0.0' : '0.5';
+                newMediaElement.onload = () => { // For images
+                    handleNewMediaLoad(newMediaElement, animationInClass);
                 };
 
-                newImage.onerror = () => {
-                    // Handle image loading error (e.g., show a broken image icon or log to console)
-                    console.error("Failed to load image: ", newImage.src);
-                    menuPage.style.visibility = 'visible'; // Ensure it's visible even on error
-                    menuPage.classList.remove(animationOutClass); // Clean up
-                    isAnimating = false; // Release animation lock
+                newMediaElement.onloadeddata = () => { // For videos
+                    if (isVideo) {
+                        handleNewMediaLoad(newMediaElement, animationInClass);
+                        newMediaElement.play().catch(error => console.warn("Video playback prevented:", error)); // Autoplay with catch
+                    }
                 };
 
-                // --- End of new logic for image preloading ---
-            }, { once: true }); // Ensure the event listener is removed after first use
+                // Handle cases where the onload/onloadeddata might not fire immediately for cached content
+                if (newMediaElement.complete || (isVideo && newMediaElement.readyState >= 2)) {
+                    handleNewMediaLoad(newMediaElement, animationInClass);
+                }
+
+                mediaContainer.appendChild(newMediaElement);
+                currentMediaElement.remove(); // Remove the old element from the DOM
+            }, { once: true });
+        }
+
+        function createMediaElement(src, forAnimation = false) {
+            const isVideo = src.endsWith('.mp4');
+            const element = isVideo ? document.createElement('video') : document.createElement('img');
+            element.src = src;
+            element.classList.add('menu-page');
+            if (isVideo) {
+                element.setAttribute('controls', '');
+                element.setAttribute('preload', 'auto');
+                element.setAttribute('playsinline', '');
+                if (forAnimation) { // If it's the element for the "out" animation, don't autoplay
+                    element.pause();
+                }
+            }
+            return element;
+        }
+
+        function handleNewMediaLoad(newMediaElement, animationInClass) {
+            newMediaElement.style.visibility = 'visible';
+            pageIndicator.textContent = `${currentPageIndex + 1} / ${menuItems.length}`;
+
+            newMediaElement.classList.add(animationInClass);
+            newMediaElement.addEventListener('animationend', function inHandler() {
+                newMediaElement.removeEventListener('animationend', inHandler);
+                newMediaElement.classList.remove(animationInClass);
+                isAnimating = false; // Animation finished, allow new animations
+            }, { once: true });
+
+            updateNavigationButtons();
+        }
+
+        function updateNavigationButtons() {
+            prevBtn.disabled = currentPageIndex === 0;
+            nextBtn.disabled = currentPageIndex === menuItems.length - 1;
+
+            prevBtn.style.opacity = prevBtn.disabled ? '0.0' : '0.5';
+            nextBtn.style.opacity = nextBtn.disabled ? '0.0' : '0.5';
         }
 
         /**
          * Navigates to the next menu page.
          */
         function nextPage() {
-            if (currentPageIndex < menuImages.length - 1 && !isAnimating) {
+            if (currentPageIndex < menuItems.length - 1 && !isAnimating && !isZoomed) {
                 currentPageIndex++;
                 updatePage('next');
             }
@@ -397,7 +379,7 @@
          * Navigates to the previous menu page.
          */
         function prevPage() {
-            if (currentPageIndex > 0 && !isAnimating) {
+            if (currentPageIndex > 0 && !isAnimating && !isZoomed) {
                 currentPageIndex--;
                 updatePage('prev');
             }
@@ -407,191 +389,79 @@
         prevBtn.addEventListener('click', prevPage);
         nextBtn.addEventListener('click', nextPage);
 
-        // --- Touch Event Listeners for Zoom and Pan ---
-        menuContainer.addEventListener('touchstart', (e) => {
-            if (isAnimating) return; // Ignore touch if page animation is ongoing
+        // Double-tap zoom functionality
+        menuContainer.addEventListener('touchend', function(e) {
+            const currentTime = new Date().getTime();
+            const tapLength = currentTime - lastTap;
 
-            if (e.touches.length === 2) {
-                isPinching = true;
-                isDragging = false; // Ensure dragging is false when pinching starts
-                menuContainer.classList.add('grabbing');
-                const touch1 = e.touches[0];
-                const touch2 = e.touches[1];
-                initialPinchDistance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
+            // Only trigger double tap if not currently swiping or animating
+            if (!isSwiping && !isAnimating && tapLength < 300 && tapLength > 0) {
+                e.preventDefault(); // Prevent default browser behavior like zooming text
 
-                // Store initial midpoint for pinch centering calculation
-                lastTouchX = (touch1.clientX + touch2.clientX) / 2;
-                lastTouchY = (touch1.clientY + touch2.clientY) / 2;
-
-            } else if (e.touches.length === 1) {
-                // Record initial touch for potential drag or swipe
-                lastTouchX = e.touches[0].clientX;
-                lastTouchY = e.touches[0].clientY;
-                swipeStartX = e.touches[0].clientX; // Initialize for swipe detection
-
-                if (currentScale > MIN_ZOOM) {
-                    isDragging = true; // Only enable dragging if already zoomed
-                    menuContainer.classList.add('grabbing');
+                if (isZoomed) {
+                    menuContainer.classList.remove('zoomed');
+                    isZoomed = false;
+                    // Restore button opacity when unzoomed
+                    updateNavigationButtons();
                 } else {
-                    isDragging = false; // Not a pan drag
+                    menuContainer.classList.add('zoomed');
+                    isZoomed = true;
                 }
             }
+            lastTap = currentTime;
+        });
+
+        // Touch Event Listeners for Swiping
+        menuContainer.addEventListener('touchstart', (e) => {
+            if (isAnimating || isZoomed) return; // Do not allow swipe if animation is in progress or zoomed
+            isSwiping = true;
+            startX = e.touches[0].clientX; // Get starting X coordinate of the touch
         });
 
         menuContainer.addEventListener('touchmove', (e) => {
-            if (isAnimating) return; // Ignore touch if page animation is ongoing
+            if (!isSwiping || isAnimating || isZoomed) return;
 
-            // Prevent default browser behaviors (e.g., scrolling, browser zoom) if we are handling a gesture
-            // This is crucial for smooth custom interactions.
-            if (isPinching || isDragging || (e.touches.length === 1 && currentScale === MIN_ZOOM && Math.abs(e.touches[0].clientX - swipeStartX) > 10)) {
-                 e.preventDefault();
+            const currentX = e.touches[0].clientX;
+            const deltaX = currentX - startX;
+            if (Math.abs(deltaX) > 10) {
+                e.preventDefault();
             }
-
-            if (isPinching && e.touches.length === 2) {
-                const touch1 = e.touches[0];
-                const touch2 = e.touches[1];
-                const newPinchDistance = Math.hypot(touch2.clientX - touch1.clientX, touch2.clientY - touch1.clientY);
-
-                const scaleFactor = newPinchDistance / initialPinchDistance;
-                let newScale = currentScale * scaleFactor;
-                newScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newScale));
-
-                const containerRect = menuContainer.getBoundingClientRect();
-                const currentMidX = (touch1.clientX + touch2.clientX) / 2;
-                const currentMidY = (touch1.clientY + touch2.clientY) / 2;
-
-                // Calculate pivot point (pinch center) relative to container's center
-                const px = currentMidX - (containerRect.left + containerRect.width / 2);
-                const py = currentMidY - (containerRect.top + containerRect.height / 2);
-
-                // Calculate new offsets to keep the `px, py` point fixed after scaling
-                let calculatedOffsetX = px - (px - offsetX) * (newScale / currentScale);
-                let calculatedOffsetY = py - (py - offsetY) * (newScale / currentScale);
-
-                currentScale = newScale; // Update scale first
-
-                // Clamp after calculating new offsets with the new scale
-                const clamped = clampOffsets(calculatedOffsetX, calculatedOffsetY, currentScale);
-                offsetX = clamped.x;
-                offsetY = clamped.y;
-                applyTransform();
-
-                // Update initial pinch distance for next move
-                initialPinchDistance = newPinchDistance;
-                // lastTouchX/Y are not needed for subsequent pinch calculations with this formula
-                // but good to keep if gesture switches to drag (though that shouldn't happen mid-pinch)
-
-            } else if (isDragging && e.touches.length === 1) {
-                const touch = e.touches[0];
-                const deltaX = touch.clientX - lastTouchX;
-                const deltaY = touch.clientY - lastTouchY;
-
-                const newOffsetX = offsetX + deltaX;
-                const newOffsetY = offsetY + deltaY;
-
-                const clamped = clampOffsets(newOffsetX, newOffsetY, currentScale);
-                offsetX = clamped.x;
-                offsetY = clamped.y;
-
-                applyTransform();
-
-                lastTouchX = touch.clientX;
-                lastTouchY = touch.clientY;
-            }
-            // Swipe logic is handled in touchend after determining no zoom/pan happened
-        }, { passive: false }); // `passive: false` is needed for `preventDefault()` to work
+        }, { passive: false });
 
         menuContainer.addEventListener('touchend', (e) => {
-            menuContainer.classList.remove('grabbing');
-            if (isAnimating) {
-                isPinching = false;
-                isDragging = false;
-                return; // Ignore touchend if page animation is ongoing
+            if (!isSwiping || isAnimating || isZoomed) {
+                isSwiping = false;
+                return;
             }
+            isSwiping = false;
 
-            // If a pinch or drag was active, finalize it and prevent other gestures
-            if (isPinching || isDragging) {
-                isPinching = false;
-                isDragging = false;
-                // After pinch/drag, re-clamp offsets in case current position is out of bounds
-                const clamped = clampOffsets(offsetX, offsetY, currentScale);
-                offsetX = clamped.x;
-                offsetY = clamped.y;
-                applyTransform(); // Apply final clamped position
-                return; // Do not trigger double tap or page swipe after pinch/drag
-            }
+            const endX = e.changedTouches[0].clientX;
+            const deltaX = endX - startX;
+            const swipeThreshold = menuContainer.offsetWidth / 5;
 
-            // --- Double Tap Logic ---
-            // Check for double tap only if no active multi-touch gestures and only one finger lifted
-            if (e.touches.length === 0) { // All fingers lifted
-                const currentTime = Date.now();
-                const tapDuration = currentTime - lastTapTime;
-
-                // If it's a double tap
-                if (lastTapTime > 0 && tapDuration < DOUBLE_TAP_THRESHOLD_MS) {
-                    const tapClientX = e.changedTouches[0].clientX;
-                    const tapClientY = e.changedTouches[0].clientY;
-                    const containerRect = menuContainer.getBoundingClientRect();
-
-                    // Calculate tap point relative to container's center
-                    const px = tapClientX - (containerRect.left + containerRect.width / 2);
-                    const py = tapClientY - (containerRect.top + containerRect.height / 2);
-
-                    if (currentScale > MIN_ZOOM) {
-                        resetZoom(); // Zoom out if already zoomed
-                    } else {
-                        // Zoom in to 2x, centered on tap point
-                        const targetScale = 2.0;
-
-                        // Calculate new translations to center around tap point using the formula
-                        // new_tx = px - (px - current_tx) * (new_scale / current_scale)
-                        // Here, current_tx, current_ty are 0 before zooming in.
-                        let newOffsetX = px - (px - 0) * (targetScale / MIN_ZOOM);
-                        let newOffsetY = py - (py - 0) * (targetScale / MIN_ZOOM);
-
-                        currentScale = targetScale; // Set the new scale
-
-                        const clamped = clampOffsets(newOffsetX, newOffsetY, currentScale);
-                        offsetX = clamped.x;
-                        offsetY = clamped.y;
-                        applyTransform();
-                    }
-                    lastTapTime = 0; // Reset last tap time to prevent accidental triple taps
-                    return; // Double tap handled, prevent page swipe
-                } else {
-                    lastTapTime = currentTime; // Record first tap time
-                }
-            }
-
-            // --- Page Swipe Logic (only if not zoomed and no double tap occurred) ---
-            if (currentScale === MIN_ZOOM) {
-                const endX = e.changedTouches[0].clientX;
-                const deltaX = endX - swipeStartX;
-
-                if (Math.abs(deltaX) > SWIPE_THRESHOLD) { // Only consider swipe if movement is significant
-                    if (deltaX > 0 && currentPageIndex > 0) { // Swiped right
-                        prevPage();
-                    } else if (deltaX < 0 && currentPageIndex < menuImages.length - 1) { // Swiped left
-                        nextPage();
-                    }
-                }
+            if (deltaX > swipeThreshold && currentPageIndex > 0) {
+                prevPage();
+            } else if (deltaX < -swipeThreshold && currentPageIndex < menuItems.length - 1) {
+                nextPage();
             }
         });
 
-        // Initialize the first page without animation on load
+        // Initialize the first page on load
         function initializePage() {
-            menuPage.src = menuImages[currentPageIndex];
-            pageIndicator.textContent = `${currentPageIndex + 1} / ${menuImages.length}`;
+            // Clear existing content and add the initial media element
+            while (mediaContainer.firstChild) {
+                mediaContainer.removeChild(mediaContainer.firstChild);
+            }
+            const initialMedia = createMediaElement(menuItems[currentPageIndex]);
+            mediaContainer.appendChild(initialMedia);
 
-            // Set initial state for buttons based on current page
-            prevBtn.disabled = currentPageIndex === 0;
-            nextBtn.disabled = currentPageIndex === menuImages.length - 1;
+            // If it's a video, attempt to play it
+            if (menuItems[currentPageIndex].endsWith('.mp4')) {
+                initialMedia.play().catch(error => console.warn("Initial video playback prevented:", error));
+            }
 
-            // Set opacity based on disabled state
-            prevBtn.style.opacity = prevBtn.disabled ? '0.0' : '0.5';
-            nextBtn.style.opacity = nextBtn.disabled ? '0.0' : '0.5';
-
-            resetZoom(); // Ensure page starts unzoomed
+            pageIndicator.textContent = `${currentPageIndex + 1} / ${menuItems.length}`;
+            updateNavigationButtons();
         }
 
         // Call initializePage on load
@@ -599,7 +469,7 @@
 
         // Handle resize events to adjust button state based on screen size
         window.addEventListener('resize', () => {
-            initializePage(); // Re-evaluate button state and reset zoom on resize
+            initializePage(); // Re-evaluate button state on resize
         });
     </script>
 </body>
