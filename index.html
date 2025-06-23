@@ -292,7 +292,7 @@
                 itemsToPreload.push(menuItems[currentIndex + 1]); // Preload next
             }
 
-            itemsToPreload.forEach(url => { // **FIXED TYPO HERE**
+            itemsToPreload.forEach(url => {
                 if (!mediaCache[url]) {
                     const isVideo = url.endsWith('.mp4');
                     // Create the element but don't append it to DOM yet
@@ -301,7 +301,9 @@
                     if (isVideo) {
                         tempElement.muted = true; // Mute preloaded videos (good practice)
                         tempElement.preload = 'auto'; // Hint to load data
+                        tempElement.loop = true
                         tempElement.playsinline = true; // Still useful for mobile
+                        // tempElement.play();
                         // Don't call .play() here for preloaded videos, it's just for caching.
                     }
                     mediaCache[url] = tempElement; // Store the element in cache
@@ -328,26 +330,8 @@
                 element.setAttribute('loop', '');
                 element.setAttribute('muted', '');
                 element.setAttribute('playsinline', '');
+                element.play();
 
-                // element.setAttribute('controls', ''); // Uncomment if you want video controls always visible
-
-                if (forAnimation) { // If it's the element for the "out" animation, ensure it's paused and reset.
-                    element.pause();
-                    element.currentTime = 0; // Reset for animation out
-                } else {
-                    // Attach event listener for when video is ready to play
-                    element.addEventListener('canplaythrough', function handler() {
-                        this.removeEventListener('canplaythrough', handler); // Remove listener after first successful play attempt
-                        this.play().catch(error => {
-                            console.warn("Video playback prevented (canplaythrough/autoplay policy):", error);
-                        });
-                    }, { once: true }); // Ensure this listener only fires once
-
-                    // Attempt immediate play if video is already buffered/ready (e.g., from cache)
-                    if (element.readyState >= 3) { // HTMLMediaElement.HAVE_FUTURE_DATA or HAVE_ENOUGH_DATA
-                        element.play().catch(error => console.warn("Video playback prevented (immediate ready check):", error));
-                    }
-                }
             }
             return element;
         }
@@ -393,54 +377,28 @@
 
             // Get the current media element for the "out" animation
             const currentMediaElement = mediaContainer.querySelector('.menu-page');
-            if (currentMediaElement) {
-                currentMediaElement.classList.add(animationOutClass);
+            console.log(currentMediaElement)
 
-                currentMediaElement.addEventListener('animationend', function handler() {
-                    currentMediaElement.removeEventListener('animationend', handler);
-                    currentMediaElement.classList.remove(animationOutClass);
-                    currentMediaElement.style.visibility = 'hidden'; // Hide the old element
-
-                    const newMediaSrc = menuItems[currentPageIndex];
-                    let newMediaElement = mediaCache[newMediaSrc]; // Try to get from cache
-
-                    if (!newMediaElement) {
-                        // If not in cache, create it (should be rare if preloading works)
-                        newMediaElement = createMediaElement(newMediaSrc, false); // Not for animation
-                        mediaCache[newMediaSrc] = newMediaElement; // Cache it
-                    }
-
-                    // For the new element coming in:
-                    if (newMediaSrc.endsWith('.mp4')) {
-                        newMediaElement.currentTime = 0; // Ensure video starts from beginning for loop
-                        // The play logic is primarily within createMediaElement,
-                        // but re-trigger it here for cached videos just in case.
-                        newMediaElement.addEventListener('canplaythrough', function playHandler() {
-                            this.removeEventListener('canplaythrough', playHandler);
-                            this.play().catch(error => console.warn("Video playback prevented on transition (canplaythrough):", error));
-                        }, { once: true });
-                        if (newMediaElement.readyState >= 3) {
-                            newMediaElement.play().catch(error => console.warn("Video playback prevented on transition (ready state):", error));
-                        }
-                    } else {
-                        // For images, ensure they are fully loaded before handling.
-                        // If `newMediaElement.complete` is false, it means it's not fully loaded yet.
-                        if (!newMediaElement.complete) {
-                            newMediaElement.onload = () => handleNewMediaLoad(newMediaElement, animationInClass);
-                        } else {
-                            // If it's already complete, proceed directly
-                            handleNewMediaLoad(newMediaElement, animationInClass);
-                        }
-                    }
+            const newMediaSrc = menuItems[currentPageIndex];
+            let newMediaElement = mediaCache[newMediaSrc];
+            if (!newMediaElement) {
+                newMediaElement = createMediaElement(newMediaSrc, false);
+                mediaCache[newMediaSrc] = newMediaElement;
+            }
+            handleNewMediaLoad(newMediaElement, animationInClass);
+            if (newMediaSrc.endsWith('.mp4')) {
+                // newMediaElement.currentTime = 0; // Ensure video starts from beginning for loop
+                // The play logic is primarily within createMediaElement,
+                // but re-trigger it here for cached videos just in case.
+                console.log('test.');
+                // initializePage();
+                newMediaElement.addEventListener('canplaythrough', function playHandler() {
+                    this.removeEventListener('canplaythrough', playHandler);
+                    this.play().catch(error => console.warn("Video playback prevented on transition (canplaythrough):", error));
                 }, { once: true });
-            } else { // Fallback for initial load if no element is present
-                const newMediaSrc = menuItems[currentPageIndex];
-                let newMediaElement = mediaCache[newMediaSrc];
-                if (!newMediaElement) {
-                    newMediaElement = createMediaElement(newMediaSrc, false);
-                    mediaCache[newMediaSrc] = newMediaElement;
+                if (newMediaElement.readyState >= 3) {
+                    newMediaElement.play().catch(error => console.warn("Video playback prevented on transition (ready state):", error));
                 }
-                handleNewMediaLoad(newMediaElement, animationInClass);
             }
         }
 
@@ -482,38 +440,46 @@
             nextBtn.style.opacity = nextBtn.disabled ? '0.0' : '0.5';
         }
 
-        // Double-tap zoom functionality
-        menuContainer.addEventListener('touchend', function(e) {
+        
+        // Refined Double-tap zoom functionality and Single-tap Play/Pause
+        menuContainer.addEventListener('touchend', (e) => {
             const currentTime = new Date().getTime();
             const tapLength = currentTime - lastTap;
+            const currentMedia = mediaContainer.querySelector('.menu-page');
+            const endX = e.changedTouches[0].clientX;
+            const deltaX = endX - startX;
+            const swipeThreshold = menuContainer.offsetWidth / 5;
 
-            if (!isSwiping && !isAnimating && tapLength < 300 && tapLength > 0) {
-                e.preventDefault();
-
-                // Stop video playback when zooming
-                const currentMedia = mediaContainer.querySelector('.menu-page');
-                if (currentMedia && currentMedia.tagName === 'VIDEO') {
-                    currentMedia.pause();
-                }
-
-                if (isZoomed) {
-                    menuContainer.classList.remove('zoomed');
-                    isZoomed = false;
-                    updateNavigationButtons();
-                    // If video was playing, try to resume after unzoom
-                    if (currentMedia && currentMedia.tagName === 'VIDEO' && currentMedia.duration > 0 && !currentMedia.paused) {
-                         currentMedia.play().catch(error => console.warn("Video resume prevented after unzoom:", error));
-                    }
-                } else {
-                    menuContainer.classList.add('zoomed');
-                    isZoomed = true;
-                }
+            // Immediately reset isSwiping if multiple fingers are still down or if it was never a single-finger start
+            if (e.touches.length > 0 || e.changedTouches.length !== 1 || isAnimating || isZoomed) {
+                isSwiping = false;
+                return;
             }
-            lastTap = currentTime;
+
+            // --- Handle Swipe Logic ---
+            if (isSwiping) { // If a swipe gesture was registered in touchmove
+                isSwiping = false; // Reset swipe flag
+
+                if (deltaX > swipeThreshold && currentPageIndex > 0) {
+                    prevPage();
+                } else if (deltaX < -swipeThreshold && currentPageIndex < menuItems.length - 1) {
+                    nextPage();
+                }
+                return; // Consume the event, don't proceed to tap logic
+            }
+
         });
+
 
         // Touch Event Listeners for Swiping
         menuContainer.addEventListener('touchstart', (e) => {
+            // New check: if more than one finger, don't start swipe
+            if (e.touches.length > 1) {
+                isSwiping = false; // Ensure swipe is reset if multiple fingers are used
+                console.log('Multiple fingers detected, swipe prevented.');
+                return;
+            }
+
             if (isAnimating || isZoomed) return;
             isSwiping = true;
             startX = e.touches[0].clientX;
@@ -529,26 +495,8 @@
             }
         }, { passive: false });
 
-        menuContainer.addEventListener('touchend', (e) => {
-            if (!isSwiping || isAnimating || isZoomed) {
-                isSwiping = false;
-                return;
-            }
-            isSwiping = false;
 
-            const endX = e.changedTouches[0].clientX;
-            const deltaX = endX - startX;
-            const swipeThreshold = menuContainer.offsetWidth / 5;
-            console.log('Touch End. DeltaX:', deltaX, 'Swipe Threshold:', swipeThreshold); // Debug log
-
-            if (deltaX > swipeThreshold && currentPageIndex > 0) {
-                prevPage();
-            } else if (deltaX < -swipeThreshold && currentPageIndex < menuItems.length - 1) {
-                nextPage();
-            }
-        });
-
-        // Initialize the first page on load
+        // Initialize the first page on load or resize
         function initializePage() {
             // Ensure mediaContainer is empty before adding initial content
             while (mediaContainer.firstChild) {
@@ -556,14 +504,17 @@
             }
 
             const initialMediaSrc = menuItems[currentPageIndex];
-            const initialMediaElement = createMediaElement(initialMediaSrc, false); // Not for animation
+            // Pass 'false' for forAnimation to ensure autoplay logic is applied
+            const initialMediaElement = createMediaElement(initialMediaSrc, false);
             mediaCache[initialMediaSrc] = initialMediaElement; // Cache the initial element
 
             mediaContainer.appendChild(initialMediaElement);
 
             pageIndicator.textContent = `${currentPageIndex + 1} / ${menuItems.length}`;
             updateNavigationButtons();
-            preloadAdjacentMedia(currentPageIndex); // Preload adjacent on initial load
+            preloadAdjacentMedia(currentPageIndex); // Preload adjacent on initial load/resize
+
+
         }
 
         // Call initializePage on load
@@ -571,8 +522,9 @@
 
         // Handle resize events to adjust button state based on screen size
         window.addEventListener('resize', () => {
-            initializePage();
+            initializePage(); // Re-initialize page on resize
         });
     </script>
+    
 </body>
 </html>
