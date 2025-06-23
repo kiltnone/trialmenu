@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Restaurant Menu</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom CSS for page-turn animation and responsiveness */
+        html, body {
+            height: 100%; /* Ensure html and body take full height */
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Hide scrollbars if content overflows during transitions */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #000000; /* Light gray background */
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* Center content horizontally */
+            justify-content: center; /* Center content vertically */
+            -webkit-tap-highlight-color: transparent; /* Remove tap highlight on mobile */
+        }
+
+        .menu-container {
+            position: relative;
+            width: 95%; /* Responsive width */
+            max-width: 500px; /* Max width for larger screens */
+            height: auto; /* Height will be determined by image aspect ratio */
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+            border-radius: 1rem; /* Rounded corners */
+            overflow: hidden; /* Hide overflow during transitions */
+            background-color: #000000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem; /* Padding inside the container */
+            perspective: 1000px; /* Crucial for 3D transforms */
+            transition: transform 0.3s ease-out; /* Smooth transition for zoom */
+        }
+
+        .menu-page {
+            width: 100%;
+            height: auto;
+            display: block; /* Remove extra space below image */
+            border-radius: 0.75rem; /* Slightly smaller rounded corners for the image */
+            object-fit: contain; /* Ensure image fits without cropping */
+        }
+
+        /* Keyframes for page turn animations */
+        /* Turning to next page (swipe left) */
+        @keyframes pageFlipOutLeft {
+            0% {
+                opacity: 1;
+                transform: perspective(1000px) rotateY(0deg);
+                transform-origin: right center;
+            }
+            100% {
+                opacity: 0;
+                transform: perspective(1000px) rotateY(-180deg); /* Flips over to the left */
+                transform-origin: right center;
+            }
+        }
+
+        @keyframes pageFlipInRight {
+            0% {
+                opacity: 0;
+                transform: perspective(1000px) rotateY(180deg); /* Starts flipped from right */
+                transform-origin: left center;
+            }
+            100% {
+                opacity: 1;
+                transform: perspective(1000px) rotateY(0deg);
+                transform-origin: left center;
+            }
+        }
+
+        /* Turning to previous page (swipe right) */
+        @keyframes pageFlipOutRight {
+            0% {
+                opacity: 1;
+                transform: perspective(1000px) rotateY(0deg);
+                transform-origin: left center;
+            }
+            100% {
+                opacity: 0;
+                transform: perspective(1000px) rotateY(180deg); /* Flips over to the right */
+                transform-origin: left center;
+            }
+        }
+
+        @keyframes pageFlipInLeft {
+            0% {
+                opacity: 0;
+                transform: perspective(1000px) rotateY(-180deg); /* Starts flipped from left */
+                transform-origin: right center;
+            }
+            100% {
+                opacity: 1;
+                transform: perspective(1000px) rotateY(0deg);
+                transform-origin: right center;
+            }
+        }
+
+        /* Classes for applying animations */
+        .page-animate-out-left {
+            animation: pageFlipOutLeft 0.6s forwards; /* Increased duration for smoother flip */
+        }
+
+        .page-animate-in-right {
+            animation: pageFlipInRight 0.6s forwards;
+        }
+
+        .page-animate-out-right {
+            animation: pageFlipOutRight 0.6s forwards;
+        }
+
+        .page-animate-in-left {
+            animation: pageFlipInLeft 0.6s forwards;
+        }
+
+
+        .navigation-button {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background-color: rgba(0, 0, 0, 0.4);
+            color: white;
+            border: none;
+            padding: 0.75rem 1rem;
+            font-size: 1.5rem;
+            cursor: pointer;
+            border-radius: 9999px; /* Fully rounded */
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s ease, opacity 0.3s ease; /* Added opacity transition */
+            user-select: none; /* Prevent text selection */
+            -webkit-user-select: none; /* For Safari */
+            -moz-user-select: none; /* For Firefox */
+            -ms-user-select: none; /* For IE/Edge */
+        }
+
+        .navigation-button:hover {
+            background-color: rgba(0, 0, 0, 0.6);
+        }
+
+        .prev-button {
+            left: 0.5rem;
+        }
+
+        .next-button {
+            right: 0.5rem;
+        }
+
+        .page-indicator {
+            position: absolute;
+            bottom: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            z-index: 10;
+        }
+        .preload-images {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+        }
+
+        .preload-images::after {
+            content: url('path/to/image1.jpg') url('path/to/image2.png');
+            /* This is a trick to make the browser fetch the images */
+            display: none;
+        }
+
+        /* Responsive adjustments */
+        @media (min-width: 640px) {
+            .menu-container {
+                padding: 1.5rem;
+            }
+            .navigation-button {
+                padding: 1rem 1.25rem;
+                font-size: 2rem;
+            }
+            .prev-button {
+                left: 1.5rem;
+            }
+            .next-button {
+                right: 1.5rem;
+            }
+        }
+
+        /* New: Disable navigation buttons on mobile while keeping them visible with dynamic opacity */
+        @media (max-width: 639px) {
+            .navigation-button {
+                pointer-events: none; /* Disables click/touch events */
+                /* Removed opacity: 0.5 !important; to let JS control opacity based on disabled state */
+            }
+        }
+        /* Styles for zoomed state */
+        .zoomed {
+            transform: scale(3); /* Zoom in by 200% */
+            cursor: zoom-out; /* Indicate it's zoomed in */
+        }
+        .menu-container.zoomed .navigation-button {
+            opacity: 0 !important; /* Hide buttons when zoomed */
+            pointer-events: none;
+        }
+        .menu-container.zoomed .page-indicator {
+            opacity: 0 !important; /* Hide indicator when zoomed */
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Menu Container -->
+    <div class="menu-container">
+        <!-- Main Menu Image -->
+         <div id="mediaContainer" class="w-full h-full flex items-center justify-center">
+            <img id="menuPage" src="menu2/0.jpg" alt="Menu Page" class="menu-page">
+         </div>
+        
+
+        <!-- Previous Button -->
+        <button id="prevBtn" class="navigation-button prev-button focus:outline-none">
+            &#8249; <!-- Left arrow HTML entity -->
+        </button>
+
+        <!-- Next Button -->
+        <button id="nextBtn" class="navigation-button next-button focus:outline-none">
+            &#8250; <!-- Right arrow HTML entity -->
+        </button>
+
+        <!-- Page Indicator -->
+        <div id="pageIndicator" class="page-indicator">1 / 1</div>
+    </div>
+
+<script>
+        // Get DOM elements
+        const mediaContainer = document.getElementById('mediaContainer');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const pageIndicator = document.getElementById('pageIndicator');
+        const menuContainer = document.querySelector('.menu-container');
+
+        // Array of menu image/video URLs
+        const menuItems = [
+            "menu2/0.jpg",
+            "menu2/1.jpg",
+            "menu2/2.jpg",
+            "menu2/3.jpg",
+            "menu2/4.jpg",
+            "menu2/5.jpg",
+            "menu2/6.jpg",
+            "menu2/7.jpg",
+            "menu2/8.mp4", // This is where your video is
+            "menu2/9.jpg",
+            "menu2/10.jpg",
+            "menu2/11.jpg",
+            "menu2/12.jpg"
+        ];
+
+        let currentPageIndex = 0;
+        let startX = 0;
+        let isSwiping = false;
+        let isAnimating = false; // Flag to prevent multiple animations at once
+        let isZoomed = false; // Flag for zoom state
+        let lastTap = 0; // For double-tap detection
+
+        // Cache for preloaded images/videos
+        const mediaCache = {};
+
+        /**
+         * Preloads the previous and next media items into a cache.
+         * This helps reduce loading time when navigating.
+         * @param {number} currentIndex The index of the currently displayed item.
+         */
+        function preloadAdjacentMedia(currentIndex) {
+            const itemsToPreload = [];
+            if (currentIndex > 0) {
+                itemsToPreload.push(menuItems[currentIndex - 1]); // Preload previous
+            }
+            if (currentIndex < menuItems.length - 1) {
+                itemsToPreload.push(menuItems[currentIndex + 1]); // Preload next
+            }
+
+            itemsToPreload.forEach(url => { // **FIXED TYPO HERE**
+                if (!mediaCache[url]) {
+                    const isVideo = url.endsWith('.mp4');
+                    // Create the element but don't append it to DOM yet
+                    const tempElement = isVideo ? document.createElement('video') : document.createElement('img');
+                    tempElement.src = url;
+                    if (isVideo) {
+                        tempElement.muted = true; // Mute preloaded videos (good practice)
+                        tempElement.preload = 'auto'; // Hint to load data
+                        tempElement.playsinline = true; // Still useful for mobile
+                        // Don't call .play() here for preloaded videos, it's just for caching.
+                    }
+                    mediaCache[url] = tempElement; // Store the element in cache
+                    console.log(`Preloaded: ${url}`);
+                }
+            });
+        }
+
+
+        /**
+         * Creates an image or video element with necessary attributes.
+         * @param {string} src The URL of the media.
+         * @param {boolean} forAnimation If true, this element is for the "out" animation, so don't autoplay video.
+         * @returns {HTMLElement} The created <img> or <video> element.
+         */
+        function createMediaElement(src, forAnimation = false) {
+            const isVideo = src.endsWith('.mp4');
+            const element = isVideo ? document.createElement('video') : document.createElement('img');
+            element.src = src;
+            element.classList.add('menu-page'); // Apply base styling
+
+            if (isVideo) {
+                element.setAttribute('autoplay', '');
+                element.setAttribute('loop', '');
+                element.setAttribute('muted', '');
+                element.setAttribute('playsinline', '');
+
+                // element.setAttribute('controls', ''); // Uncomment if you want video controls always visible
+
+                if (forAnimation) { // If it's the element for the "out" animation, ensure it's paused and reset.
+                    element.pause();
+                    element.currentTime = 0; // Reset for animation out
+                } else {
+                    // Attach event listener for when video is ready to play
+                    element.addEventListener('canplaythrough', function handler() {
+                        this.removeEventListener('canplaythrough', handler); // Remove listener after first successful play attempt
+                        this.play().catch(error => {
+                            console.warn("Video playback prevented (canplaythrough/autoplay policy):", error);
+                        });
+                    }, { once: true }); // Ensure this listener only fires once
+
+                    // Attempt immediate play if video is already buffered/ready (e.g., from cache)
+                    if (element.readyState >= 3) { // HTMLMediaElement.HAVE_FUTURE_DATA or HAVE_ENOUGH_DATA
+                        element.play().catch(error => console.warn("Video playback prevented (immediate ready check):", error));
+                    }
+                }
+            }
+            return element;
+        }
+
+
+        /**
+         * Handles the loading and display of a new media element after an animation.
+         * @param {HTMLElement} newMediaElement The newly created <img> or <video> element.
+         * @param {string} animationInClass The CSS class for the "in" animation.
+         */
+        function handleNewMediaLoad(newMediaElement, animationInClass) {
+            // Ensure the mediaContainer is ready
+            while (mediaContainer.firstChild) {
+                mediaContainer.removeChild(mediaContainer.firstChild);
+            }
+            mediaContainer.appendChild(newMediaElement);
+
+            newMediaElement.style.visibility = 'visible';
+            pageIndicator.textContent = `${currentPageIndex + 1} / ${menuItems.length}`;
+
+            newMediaElement.classList.add(animationInClass);
+            newMediaElement.addEventListener('animationend', function inHandler() {
+                newMediaElement.removeEventListener('animationend', inHandler);
+                newMediaElement.classList.remove(animationInClass);
+                isAnimating = false; // Animation finished, allow new animations
+            }, { once: true });
+
+            updateNavigationButtons();
+            // After page change, preload the next one
+            preloadAdjacentMedia(currentPageIndex);
+        }
+
+        /**
+         * Updates the displayed menu page and page indicator with animation.
+         * @param {string} direction 'next' or 'prev' for animation direction.
+         */
+        function updatePage(direction) {
+            if (isAnimating || isZoomed) return;
+            isAnimating = true;
+
+            const animationOutClass = direction === 'next' ? 'page-animate-out-right' : 'page-animate-out-left';
+            const animationInClass = direction === 'next' ? 'page-animate-in-left' : 'page-animate-in-right';
+
+            // Get the current media element for the "out" animation
+            const currentMediaElement = mediaContainer.querySelector('.menu-page');
+            if (currentMediaElement) {
+                currentMediaElement.classList.add(animationOutClass);
+
+                currentMediaElement.addEventListener('animationend', function handler() {
+                    currentMediaElement.removeEventListener('animationend', handler);
+                    currentMediaElement.classList.remove(animationOutClass);
+                    currentMediaElement.style.visibility = 'hidden'; // Hide the old element
+
+                    const newMediaSrc = menuItems[currentPageIndex];
+                    let newMediaElement = mediaCache[newMediaSrc]; // Try to get from cache
+
+                    if (!newMediaElement) {
+                        // If not in cache, create it (should be rare if preloading works)
+                        newMediaElement = createMediaElement(newMediaSrc, false); // Not for animation
+                        mediaCache[newMediaSrc] = newMediaElement; // Cache it
+                    }
+
+                    // For the new element coming in:
+                    if (newMediaSrc.endsWith('.mp4')) {
+                        newMediaElement.currentTime = 0; // Ensure video starts from beginning for loop
+                        // The play logic is primarily within createMediaElement,
+                        // but re-trigger it here for cached videos just in case.
+                        newMediaElement.addEventListener('canplaythrough', function playHandler() {
+                            this.removeEventListener('canplaythrough', playHandler);
+                            this.play().catch(error => console.warn("Video playback prevented on transition (canplaythrough):", error));
+                        }, { once: true });
+                        if (newMediaElement.readyState >= 3) {
+                            newMediaElement.play().catch(error => console.warn("Video playback prevented on transition (ready state):", error));
+                        }
+                    } else {
+                        // For images, ensure they are fully loaded before handling.
+                        // If `newMediaElement.complete` is false, it means it's not fully loaded yet.
+                        if (!newMediaElement.complete) {
+                            newMediaElement.onload = () => handleNewMediaLoad(newMediaElement, animationInClass);
+                        } else {
+                            // If it's already complete, proceed directly
+                            handleNewMediaLoad(newMediaElement, animationInClass);
+                        }
+                    }
+                }, { once: true });
+            } else { // Fallback for initial load if no element is present
+                const newMediaSrc = menuItems[currentPageIndex];
+                let newMediaElement = mediaCache[newMediaSrc];
+                if (!newMediaElement) {
+                    newMediaElement = createMediaElement(newMediaSrc, false);
+                    mediaCache[newMediaSrc] = newMediaElement;
+                }
+                handleNewMediaLoad(newMediaElement, animationInClass);
+            }
+        }
+
+        /**
+         * Navigates to the next menu page.
+         */
+        function nextPage() {
+            console.log('Next button clicked. Current index:', currentPageIndex); // Debug log
+            if (currentPageIndex < menuItems.length - 1 && !isAnimating && !isZoomed) {
+                currentPageIndex++;
+                updatePage('next');
+            } else {
+                console.log('Next navigation blocked: isAnimating=', isAnimating, 'isZoomed=', isZoomed, 'at end of menu=', currentPageIndex === menuItems.length - 1);
+            }
+        }
+
+        /**
+         * Navigates to the previous menu page.
+         */
+        function prevPage() {
+            console.log('Prev button clicked. Current index:', currentPageIndex); // Debug log
+            if (currentPageIndex > 0 && !isAnimating && !isZoomed) {
+                currentPageIndex--;
+                updatePage('prev');
+            } else {
+                console.log('Prev navigation blocked: isAnimating=', isAnimating, 'isZoomed=', isZoomed, 'at start of menu=', currentPageIndex === 0);
+            }
+        }
+
+        // Event Listeners for Navigation Buttons
+        prevBtn.addEventListener('click', prevPage);
+        nextBtn.addEventListener('click', nextPage);
+
+        function updateNavigationButtons() {
+            prevBtn.disabled = currentPageIndex === 0;
+            nextBtn.disabled = currentPageIndex === menuItems.length - 1;
+
+            prevBtn.style.opacity = prevBtn.disabled ? '0.0' : '0.5';
+            nextBtn.style.opacity = nextBtn.disabled ? '0.0' : '0.5';
+        }
+
+        // Double-tap zoom functionality
+        menuContainer.addEventListener('touchend', function(e) {
+            const currentTime = new Date().getTime();
+            const tapLength = currentTime - lastTap;
+
+            if (!isSwiping && !isAnimating && tapLength < 300 && tapLength > 0) {
+                e.preventDefault();
+
+                // Stop video playback when zooming
+                const currentMedia = mediaContainer.querySelector('.menu-page');
+                if (currentMedia && currentMedia.tagName === 'VIDEO') {
+                    currentMedia.pause();
+                }
+
+                if (isZoomed) {
+                    menuContainer.classList.remove('zoomed');
+                    isZoomed = false;
+                    updateNavigationButtons();
+                    // If video was playing, try to resume after unzoom
+                    if (currentMedia && currentMedia.tagName === 'VIDEO' && currentMedia.duration > 0 && !currentMedia.paused) {
+                         currentMedia.play().catch(error => console.warn("Video resume prevented after unzoom:", error));
+                    }
+                } else {
+                    menuContainer.classList.add('zoomed');
+                    isZoomed = true;
+                }
+            }
+            lastTap = currentTime;
+        });
+
+        // Touch Event Listeners for Swiping
+        menuContainer.addEventListener('touchstart', (e) => {
+            if (isAnimating || isZoomed) return;
+            isSwiping = true;
+            startX = e.touches[0].clientX;
+            console.log('Touch Start:', startX); // Debug log
+        });
+
+        menuContainer.addEventListener('touchmove', (e) => {
+            if (!isSwiping || isAnimating || isZoomed) return;
+            const currentX = e.touches[0].clientX;
+            const deltaX = currentX - startX;
+            if (Math.abs(deltaX) > 10) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        menuContainer.addEventListener('touchend', (e) => {
+            if (!isSwiping || isAnimating || isZoomed) {
+                isSwiping = false;
+                return;
+            }
+            isSwiping = false;
+
+            const endX = e.changedTouches[0].clientX;
+            const deltaX = endX - startX;
+            const swipeThreshold = menuContainer.offsetWidth / 5;
+            console.log('Touch End. DeltaX:', deltaX, 'Swipe Threshold:', swipeThreshold); // Debug log
+
+            if (deltaX > swipeThreshold && currentPageIndex > 0) {
+                prevPage();
+            } else if (deltaX < -swipeThreshold && currentPageIndex < menuItems.length - 1) {
+                nextPage();
+            }
+        });
+
+        // Initialize the first page on load
+        function initializePage() {
+            // Ensure mediaContainer is empty before adding initial content
+            while (mediaContainer.firstChild) {
+                mediaContainer.removeChild(mediaContainer.firstChild);
+            }
+
+            const initialMediaSrc = menuItems[currentPageIndex];
+            const initialMediaElement = createMediaElement(initialMediaSrc, false); // Not for animation
+            mediaCache[initialMediaSrc] = initialMediaElement; // Cache the initial element
+
+            mediaContainer.appendChild(initialMediaElement);
+
+            pageIndicator.textContent = `${currentPageIndex + 1} / ${menuItems.length}`;
+            updateNavigationButtons();
+            preloadAdjacentMedia(currentPageIndex); // Preload adjacent on initial load
+        }
+
+        // Call initializePage on load
+        window.addEventListener('load', initializePage);
+
+        // Handle resize events to adjust button state based on screen size
+        window.addEventListener('resize', () => {
+            initializePage();
+        });
+    </script>
+</body>
+</html>
