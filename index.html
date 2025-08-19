@@ -1,14 +1,5 @@
 <!-- <!DOCTYPE html>
 <html>
-  <head>
-    <meta http-equiv="refresh" content="0; url=./menu2/Medium.pdf" />
-  </head>
-  <body>
-    <p>If you are not redirected, <a href="./menu2/Medium.pdf">click here to view the PDF</a>.</p>
-  </body>
-</html> -->
-<!DOCTYPE html>
-<html>
 <head>
   <title>PDF Viewer</title>
   <style>
@@ -24,10 +15,207 @@
   </style>
 </head>
 <body>
-<!--   <iframe src="https://raw.githubusercontent.com/kiltnone/trialmenu/main/menu2/Medium.pdf" width="100%" height="100%"></iframe> -->
+--   <iframe src="https://raw.githubusercontent.com/kiltnone/trialmenu/main/menu2/Medium.pdf" width="100%" height="100%"></iframe> --
   <iframe 
   src="https://docs.google.com/gview?embedded=true&url=https://raw.githubusercontent.com/kiltnone/trialmenu/main/menu2/Medium.pdf" 
   style="width:100%; height:100%;" frameborder="0">
 </iframe>
 </body>
+</html> -->
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>PDF Viewer</title>
+  <style>
+    :root { --bar-h: 56px; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; background: #111; color: #eee; }
+    .toolbar {
+      height: var(--bar-h);
+      display: flex; align-items: center; gap: .5rem;
+      padding: 0 .75rem; background: #1a1a1a; border-bottom: 1px solid #2a2a2a;
+      position: sticky; top: 0; z-index: 10;
+    }
+    .toolbar button, .toolbar input[type="number"] {
+      background: #222; color: #eee; border: 1px solid #333; border-radius: .5rem;
+      padding: .5rem .75rem; font: inherit;
+    }
+    .toolbar button:disabled { opacity: .5; }
+    .spacer { flex: 1; }
+    .viewer {
+      position: fixed; top: var(--bar-h); left: 0; right: 0; bottom: 0;
+      display: grid; place-items: center; overflow: auto;
+      background: #0c0c0c;
+    }
+    canvas { max-width: 100%; height: auto; background: #fff; box-shadow: 0 0 24px rgba(0,0,0,.5); }
+    .hidden { display: none !important; }
+    .error { color: #f66; padding: 1rem; }
+    a.help { color: #8ab4ff; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button id="prevBtn" title="Previous page">⟵ Prev</button>
+    <div>
+      <input id="pageInput" type="number" min="1" value="1" style="width: 5rem" />
+      <span id="pageCount">/ —</span>
+    </div>
+    <button id="nextBtn" title="Next page">Next ⟶</button>
+    <div class="spacer"></div>
+    <button id="zoomOutBtn" title="Zoom out">−</button>
+    <span id="zoomLevel" aria-live="polite">100%</span>
+    <button id="zoomInBtn" title="Zoom in">+</button>
+    <button id="fitBtn" title="Fit to screen">Fit</button>
+    <div class="spacer"></div>
+    <a id="downloadLink" class="help" href="#" download>Download PDF</a>
+  </div>
+
+  <div class="viewer" id="viewer">
+    <canvas id="pdfCanvas" class="hidden"></canvas>
+    <div id="fallback" class="hidden" style="padding: 1rem; max-width: 720px;">
+      <p class="error"><strong>Couldn’t initialize the interactive viewer.</strong></p>
+      <p>You can still open the PDF directly:
+        <a id="fallbackLink" class="help" target="_blank" rel="noopener">Open PDF</a>
+      </p>
+      <p>If you’re on iOS Safari and the PDF doesn’t display inline, it may insist on opening in the system viewer.</p>
+    </div>
+  </div>
+
+  <!-- PDF.js (global build) from CDNJS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" integrity="sha512-LAvmQ38lOYCZWQ3IxLrXq0/En/b8Jjk/SauJmS1wZQzeF9S4ITMCKiB6dKTv66JwyiW21XUKMi1QrelsXLlltw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script>
+    // === Configure your PDF URL here (or via ?file=...) ===
+    const DEFAULT_PDF_URL = "./menu2/Medium.pdf"; // <- change this to your PDF path
+
+    // Read ?file=<url> param if provided
+    const params = new URLSearchParams(location.search);
+    const PDF_URL = params.get("file") ? decodeURIComponent(params.get("file")) : DEFAULT_PDF_URL;
+
+    // Link for downloading/opening
+    document.getElementById("downloadLink").href = PDF_URL;
+    document.getElementById("fallbackLink").href = PDF_URL;
+
+    // Initialize pdf.js worker
+    if (window["pdfjsLib"]) {
+      const pdfjsLib = window["pdfjsLib"];
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+      let pdfDoc = null;
+      let currentPage = 1;
+      let scale = 1.0;               // zoom scale
+      const minScale = 0.5;
+      const maxScale = 4.0;
+      const canvas = document.getElementById("pdfCanvas");
+      const ctx = canvas.getContext("2d");
+      const pageInput = document.getElementById("pageInput");
+      const pageCountEl = document.getElementById("pageCount");
+      const zoomLevelEl = document.getElementById("zoomLevel");
+      const prevBtn = document.getElementById("prevBtn");
+      const nextBtn = document.getElementById("nextBtn");
+      const zoomInBtn = document.getElementById("zoomInBtn");
+      const zoomOutBtn = document.getElementById("zoomOutBtn");
+      const fitBtn = document.getElementById("fitBtn");
+      const viewer = document.getElementById("viewer");
+      const fallback = document.getElementById("fallback");
+
+      const renderPage = async (num) => {
+        const page = await pdfDoc.getPage(num);
+
+        // Fit width of canvas to viewport (minus padding) while applying 'scale'
+        const viewportBase = page.getViewport({ scale: 1 });
+        const containerWidth = viewer.clientWidth * 0.96; // some breathing room
+        const fitToWidthScale = containerWidth / viewportBase.width;
+        const effectiveScale = fitToWidthScale * scale;
+        const viewport = page.getViewport({ scale: effectiveScale });
+
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+
+        await page.render({ canvasContext: ctx, viewport }).promise;
+
+        pageInput.value = num;
+        prevBtn.disabled = num <= 1;
+        nextBtn.disabled = num >= pdfDoc.numPages;
+        zoomLevelEl.textContent = Math.round(scale * 100) + "%";
+        canvas.classList.remove("hidden");
+      };
+
+      const queueRenderPage = (num) => renderPage(num).catch(showFallback);
+
+      const showFallback = (err) => {
+        console.warn("Viewer error:", err);
+        canvas.classList.add("hidden");
+        fallback.classList.remove("hidden");
+      };
+
+      // Load PDF
+      pdfjsLib.getDocument(PDF_URL).promise
+        .then((pdf) => {
+          pdfDoc = pdf;
+          pageCountEl.textContent = "/ " + pdfDoc.numPages;
+          pageInput.max = String(pdfDoc.numPages);
+          return queueRenderPage(currentPage);
+        })
+        .catch(showFallback);
+
+      // Controls
+      prevBtn.addEventListener("click", () => {
+        if (currentPage <= 1) return;
+        currentPage -= 1;
+        queueRenderPage(currentPage);
+      });
+      nextBtn.addEventListener("click", () => {
+        if (currentPage >= pdfDoc.numPages) return;
+        currentPage += 1;
+        queueRenderPage(currentPage);
+      });
+      pageInput.addEventListener("change", () => {
+        let p = parseInt(pageInput.value || "1", 10);
+        if (isNaN(p)) p = 1;
+        p = Math.min(Math.max(p, 1), pdfDoc.numPages);
+        currentPage = p;
+        queueRenderPage(currentPage);
+      });
+      zoomInBtn.addEventListener("click", () => {
+        scale = Math.min(maxScale, scale * 1.2);
+        queueRenderPage(currentPage);
+      });
+      zoomOutBtn.addEventListener("click", () => {
+        scale = Math.max(minScale, scale / 1.2);
+        queueRenderPage(currentPage);
+      });
+      fitBtn.addEventListener("click", () => {
+        scale = 1.0; // reset to fit-to-width baseline
+        queueRenderPage(currentPage);
+      });
+
+      // Keyboard shortcuts
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowLeft") prevBtn.click();
+        if (e.key === "ArrowRight") nextBtn.click();
+        if ((e.key === "+" || e.key === "=") && (e.ctrlKey || e.metaKey)) { e.preventDefault(); zoomInBtn.click(); }
+        if ((e.key === "-" ) && (e.ctrlKey || e.metaKey)) { e.preventDefault(); zoomOutBtn.click(); }
+      });
+
+      // Re-render on resize to maintain fit-to-width
+      window.addEventListener("resize", () => queueRenderPage(currentPage));
+    } else {
+      // If pdf.js script failed to load
+      document.getElementById("pdfCanvas").classList.add("hidden");
+      document.getElementById("fallback").classList.remove("hidden");
+    }
+  </script>
+</body>
 </html>
+
